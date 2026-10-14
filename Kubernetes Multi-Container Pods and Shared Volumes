@@ -1,0 +1,91 @@
+```markdown
+
+## Objective
+Deploy a multi-container Kubernetes pod designed to share temporary data between containers. The task required configuring an `emptyDir` volume mounted to different directory paths within two separate Ubuntu containers running in the same pod, and verifying read/write accessibility across them.
+
+## Environment & Tools
+* **Platform:** Kubernetes Cluster
+* **CLI Tool:** `kubectl`
+* **Container Image:** `ubuntu:latest`
+* **Volume Type:** `emptyDir`
+
+---
+
+## Architecture & Theory
+
+In Kubernetes, containers within the same pod share the same network namespace and can share storage volumes. An `emptyDir` volume is initially empty when a pod is assigned to a node. All containers in the pod can read and write to the same `emptyDir` volume, even if it is mounted at different paths inside each respective container. The volume's lifecycle is tied to the pod—if the pod is removed, the `emptyDir` data is permanently deleted.
+
+---
+
+## Step-by-Step Execution
+
+### 1. Define the Pod Manifest
+Created a YAML configuration file (`volume-share.yaml`) defining the pod, the shared `emptyDir` volume, and the two containers running a `sleep` command to keep them alive.
+
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: volume-share-datacenter
+spec:
+  volumes:
+  - name: volume-share
+    emptyDir: {}
+  containers:
+  - name: volume-container-datacenter-1
+    image: ubuntu:latest
+    command: ["sleep", "3600"]
+    volumeMounts:
+    - name: volume-share
+      mountPath: /tmp/beta
+  - name: volume-container-datacenter-2
+    image: ubuntu:latest
+    command: ["sleep", "3600"]
+    volumeMounts:
+    - name: volume-share
+      mountPath: /tmp/cluster
+
+```
+
+### 2. Deploy the Pod
+
+Applied the configuration to the cluster and verified that both containers started successfully.
+
+```bash
+kubectl apply -f volume-share.yaml
+kubectl get pods
+
+```
+
+*Output: `volume-share-datacenter   2/2   Running   0   10s*`
+
+### 3. Write Data from Container 1
+
+Used `kubectl exec` to run a shell command inside the first container, writing a text string to the mounted `/tmp/beta` directory.
+
+```bash
+kubectl exec -it volume-share-datacenter -c volume-container-datacenter-1 -- sh -c "echo 'Welcome to xFusionCorp Industries' > /tmp/beta/beta.txt"
+
+```
+
+### 4. Verify Data Access from Container 2
+
+Executed a `cat` command inside the second container targeting its respective mount path (`/tmp/cluster`) to confirm the data was accessible.
+
+```bash
+kubectl exec -it volume-share-datacenter -c volume-container-datacenter-2 -- cat /tmp/cluster/beta.txt
+
+```
+
+*Output: `Welcome to xFusionCorp Industries*`
+
+---
+
+## Troubleshooting & Learnings
+
+* **Kubectl Exec Syntax:** Encountered an `error: unknown flag: --sh` when trying to execute the command. This happens if there is no space between the double-dash `--` (which separates kubectl arguments from the container command) and the command itself (`sh`). Correcting it to `-- sh -c` resolved the issue.
+* **Volume Mount Paths:** It is perfectly valid (and common) for a shared volume to be mounted at completely different absolute paths inside different containers (`/tmp/beta` vs `/tmp/cluster`). The underlying data remains synced because both paths map to the same `emptyDir` on the host node.
+
+```
+
+```
