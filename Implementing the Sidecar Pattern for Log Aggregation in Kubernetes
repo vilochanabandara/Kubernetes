@@ -1,0 +1,83 @@
+```markdown
+
+## Objective
+Deploy a multi-container Kubernetes pod utilizing the **Sidecar pattern** to separate application logic from telemetry gathering. The primary container runs an Nginx web server, while a secondary native sidecar container continuously ships the access and error logs to standard output. They share data via a common `emptyDir` volume.
+
+## Environment & Tools
+* **Platform:** Kubernetes Cluster
+* **CLI Tool:** `kubectl`
+* **Architecture Pattern:** Sidecar (Native Sidecar via `initContainers`)
+* **Images:** `nginx:latest`, `ubuntu:latest`
+
+---
+
+## Architecture & Theory
+
+The **Separation of Concerns** principle dictates that a container should do one thing well. Instead of bloating the Nginx container with log-forwarding agents, we deploy a second lightweight container within the same Pod. 
+
+By defining the sidecar under `initContainers` and setting `restartPolicy: Always`, we leverage Kubernetes' modern native sidecar feature. This ensures the sidecar starts before the main container and runs continuously alongside it, sharing the `/var/log/nginx` directory via a pod-ephemeral `emptyDir` volume.
+
+---
+
+## Step-by-Step Execution
+
+### 1. Define the Multi-Container Pod Manifest
+Created `webserver.yaml` to declare the volume, the native sidecar, and the main application container.
+
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: webserver
+spec:
+  volumes:
+  - name: shared-logs
+    emptyDir: {}
+  initContainers:
+  - name: sidecar-container
+    image: ubuntu:latest
+    restartPolicy: Always
+    command: ["sh", "-c", "while true; do cat /var/log/nginx/access.log /var/log/nginx/error.log; sleep 30; done"]
+    volumeMounts:
+    - name: shared-logs
+      mountPath: /var/log/nginx
+  containers:
+  - name: nginx-container
+    image: nginx:latest
+    volumeMounts:
+    - name: shared-logs
+      mountPath: /var/log/nginx
+
+```
+
+### 2. Deploy the Pod
+
+Applied the configuration to the cluster and verified that both containers initialized and reached the running state.
+
+```bash
+kubectl apply -f webserver.yaml
+kubectl get pods webserver
+
+```
+
+*Output: `webserver   2/2   Running   0   34s*`
+
+### 3. Verify Log Aggregation
+
+Checked the sidecar's standard output to confirm it was successfully reading the Nginx logs from the shared volume.
+
+```bash
+kubectl logs webserver -c sidecar-container
+
+```
+
+---
+
+## Troubleshooting & Learnings
+
+* **Startup Race Conditions:** The initial output of the sidecar log showed `cat: /var/log/nginx/access.log: No such file or directory`. This is a classic container race condition. The native sidecar (init container) started executing its `while` loop a fraction of a second before Nginx had fully initialized and written its first log files to the shared directory. Once Nginx created the files, subsequent loop iterations read the logs successfully.
+* **Native Sidecars vs. Standard Sidecars:** Historically, sidecars were placed in the `containers` array, leading to issues with pod termination (jobs hanging because the sidecar wouldn't exit) and startup ordering. Using `initContainers` with `restartPolicy: Always` solves this by guaranteeing the sidecar is initialized first and properly managed during pod shutdown.
+
+```
+
+```
