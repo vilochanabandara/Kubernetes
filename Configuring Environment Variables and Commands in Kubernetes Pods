@@ -1,0 +1,72 @@
+```markdown
+
+## Objective
+Configure a Kubernetes Pod to execute a specific shell command that reads and prints injected environment variables. The task required creating a one-off pod (using a `bash` image) that outputs a formatted greeting using three distinct environment variables without entering a crash loop.
+
+## Environment & Tools
+* **Platform:** Kubernetes Cluster
+* **CLI Tool:** `kubectl`
+* **Image:** `bash`
+* **Core Concepts:** Environment Variables (`env`), Pod Commands (`command`), Restart Policies.
+
+---
+
+## Step-by-Step Execution
+
+### 1. Define the Pod Configuration
+Created a YAML manifest (`greeting-pod.yaml`) to declare the pod, its environment variables, the exact shell command to run, and a restart policy of `Never` to ensure it acts as a one-off execution rather than a continuous service.
+
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: print-envars-greeting
+spec:
+  restartPolicy: Never
+  containers:
+  - name: print-env-container
+    image: bash
+    env:
+    - name: GREETING
+      value: "Welcome to"
+    - name: COMPANY
+      value: "xFusionCorp"
+    - name: GROUP
+      value: "Group"
+    command: ["/bin/sh", "-c", 'echo "$(GREETING) $(COMPANY) $(GROUP)"']
+
+```
+
+### 2. Deploy the Pod
+
+Applied the configuration to the Kubernetes cluster.
+
+```bash
+kubectl apply -f greeting-pod.yaml
+
+```
+
+*Output: `pod/print-envars-greeting created*`
+
+### 3. Verify Execution and Logs
+
+Because the pod's task was to execute a single `echo` command and exit, I checked the pod's status to ensure it successfully reached the `Completed` state, then retrieved the logs to verify the output.
+
+```bash
+kubectl get pods
+kubectl logs -f print-envars-greeting
+
+```
+
+*Output: `Welcome to xFusionCorp Group*`
+
+---
+
+## Architecture & Learnings
+
+* **One-Off Tasks and Restart Policies:** By default, Kubernetes Pods have a `restartPolicy` of `Always`. If a container runs a finite script (like an `echo` command) and exits successfully, Kubernetes will keep restarting it, creating an infinite crash loop. Setting `restartPolicy: Never` (or `OnFailure`) is critical for batch jobs or single-execution scripts.
+* **Command Execution in Containers:** When overriding the default entrypoint of an image using the `command` field in Kubernetes, variables must be formatted properly. By passing `/bin/sh -c` and enclosing the echo statement in single quotes (`'echo "$(GREETING)..."'`), we ensure the shell evaluates the environment variables injected by Kubernetes at runtime.
+
+```
+
+```
