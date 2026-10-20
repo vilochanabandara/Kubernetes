@@ -1,0 +1,80 @@
+```markdown
+
+## Objective
+Simulate a production update and rollback scenario in a development environment to identify potential deployment risks. The task required creating a new namespace, deploying an Apache web server with a strict `RollingUpdate` strategy, upgrading the application to a newer image version, and finally executing a safe rollback to the original state.
+
+## Environment & Tools
+* **Platform:** Kubernetes Cluster
+* **CLI Tool:** `kubectl`
+* **Namespace:** `devops`
+* **Images:** `httpd:2.4.27` (Initial & Final), `httpd:2.4.43` (Upgrade)
+
+---
+
+## Step-by-Step Execution
+
+### 1. Create Namespace and Define Manifest
+Created the isolated `devops` namespace and authored a YAML manifest to define the Deployment and a NodePort Service. The deployment specifically restricted the rollout surge and unavailable pods to control the upgrade pace.
+
+```bash
+kubectl create namespace devops
+
+```
+
+**Deployment Strategy Configuration:**
+
+```yaml
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 2
+
+```
+
+### 2. Apply Initial Deployment
+
+Deployed the initial version of the application using the `httpd:2.4.27` image and verified the rollout status.
+
+```bash
+kubectl apply -f httpd-setup.yaml
+kubectl rollout status deployment/httpd-deploy -n devops
+
+```
+
+*Result: Deployment successfully rolled out with 2 replicas.*
+
+### 3. Upgrade the Deployment
+
+Triggered a rolling update to upgrade the containers to the newer `httpd:2.4.43` image using the `set image` imperative command. This cleanly generates a new revision in the deployment history.
+
+```bash
+kubectl set image deployment/httpd-deploy httpd=httpd:2.4.43 -n devops
+kubectl rollout status deployment/httpd-deploy -n devops
+
+```
+
+*Result: Image successfully updated, older ReplicaSet scaled down, and newer ReplicaSet scaled up to 2.*
+
+### 4. Execute a Rollback
+
+To validate the disaster recovery procedure, triggered an undo operation to revert the deployment back to the previous stable revision (`httpd:2.4.27`).
+
+```bash
+kubectl rollout undo deployment/httpd-deploy -n devops
+kubectl describe deployment httpd-deploy -n devops
+
+```
+
+*Result: Deployment successfully rolled back. `describe` output confirmed the active image reverted to `httpd:2.4.27` under Revision 3.*
+
+---
+
+## Troubleshooting & Learnings
+
+* **YAML Indentation Strictness:** Encountered strict decoding errors (`unknown field "spec.strategy.selector"`) during the initial deployment attempt. Kubernetes YAML heavily relies on exact indentation. The `selector` and `template` blocks were mistakenly nested under the `strategy` block instead of sitting at the root `spec` level. Correcting the alignment instantly resolved the parsing failures.
+* **Revision History & Replicasets:** By using `kubectl describe deployment`, I could clearly observe the ReplicaSet transitions in the `Events` log. Kubernetes keeps the old ReplicaSet around (scaled to 0) specifically so that executing `kubectl rollout undo` is near-instantaneous, simply scaling down the active set and scaling the old one back up.
+
+```
+
+```
