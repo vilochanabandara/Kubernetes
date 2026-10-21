@@ -1,0 +1,98 @@
+
+```markdown
+
+## Objective
+Set up a Jenkins Continuous Integration (CI) server on a Kubernetes cluster to manage deployment pipelines for development projects. The deployment required creating a dedicated namespace, exposing the application via a NodePort service, and bypassing the interactive Jenkins setup wizard using environment variables to streamline the automated deployment.
+
+## Environment & Tools
+* **Platform:** Kubernetes Cluster
+* **CLI Tool:** `kubectl`
+* **Namespace:** `jenkins`
+* **Image:** `jenkins/jenkins`
+* **Core Concepts:** Deployments, NodePort Services, Environment Variables Injection
+
+---
+
+## Step-by-Step Execution
+
+### 1. Create the Namespace
+Created an isolated namespace to host all Jenkins-related resources, adhering to best practices for cluster organization.
+```bash
+kubectl create namespace jenkins
+
+```
+
+### 2. Define the Deployment and Service Manifest
+
+Created a unified YAML manifest (`jenkins-setup.yaml`) specifying both the Deployment and the NodePort Service.
+
+* **Deployment:** Configured to run 1 replica of the `jenkins/jenkins` image on container port 8080.
+* **Environment Variable:** Injected `JAVA_OPTS` with the value `-Djenkins.install.runSetupWizard=false` to ensure Jenkins starts directly without requiring a manual unlock and plugin installation wizard.
+* **Service:** Configured as a `NodePort` to expose target port 8080 to the external cluster port `30008`.
+
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: jenkins-deployment
+  namespace: jenkins
+  labels:
+    app: jenkins
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: jenkins
+  template:
+    metadata:
+      labels:
+        app: jenkins
+    spec:
+      containers:
+        - name: jenkins-container
+          image: jenkins/jenkins
+          ports:
+          - containerPort: 8080
+          env:
+          - name: JAVA_OPTS
+            value: "-Djenkins.install.runSetupWizard=false"
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: jenkins-service
+  namespace: jenkins
+spec:
+  type: NodePort
+  selector:
+    app: jenkins
+  ports:
+    - port: 8080
+      targetPort: 8080
+      nodePort: 30008
+
+```
+
+### 3. Deploy and Verify
+
+Applied the manifest and monitored the pod lifecycle until it reached a fully initialized and `Running` state.
+
+```bash
+kubectl apply -f jenkins-setup.yaml
+kubectl get pods -n jenkins -w
+
+```
+
+*Result: Deployment successful. The pod reached `1/1 Ready` status, and the Jenkins UI became accessible via the browser at `<Node-IP>:30008`.*
+
+---
+
+## Troubleshooting & Learnings
+
+* **Strict Decoding Validation:** During the initial application of the manifest, the Kubernetes API server rejected the request with a `strict decoding error`. This was caused by typographical errors in the YAML keys (`matchLables` and `lables` instead of `matchLabels` and `labels`). Kubernetes `v1` API enforces strict schema validation, ensuring that invalid fields are caught before they cause silent deployment failures. Correcting the spelling resolved the issue immediately.
+* **Automated Bootstrapping:** Injecting Java arguments directly into the container environment via the deployment specification is a highly effective way to pre-configure Java-based applications like Jenkins for headless, automated environments.
+
+```
+
+```
