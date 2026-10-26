@@ -1,0 +1,89 @@
+```markdown
+
+## Objective
+Set up a Grafana instance on the Kubernetes cluster to collect, analyze, and visualize application analytics. The task required creating a deployment using the official Grafana image and exposing the web interface externally using a specified NodePort (32000).
+
+## Environment & Tools
+* **Platform:** Kubernetes Cluster
+* **CLI Tool:** `kubectl`
+* **Application:** Grafana (`grafana/grafana:latest`)
+* **Resources:** Deployment, NodePort Service
+
+---
+
+## Step-by-Step Execution
+
+### 1. Define the Deployment and Service Manifest
+Created a unified YAML manifest (`grafana-setup.yaml`) to define the deployment and service configurations. Grafana's default container port is `3000`, which needed to be mapped to the requested external `NodePort` of `32000`.
+
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: grafana-deployment-nautilus
+  labels:
+    app: grafana
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: grafana
+  template:
+    metadata:
+      labels:
+        app: grafana
+    spec:
+      containers:
+      - name: grafana-container
+        image: grafana/grafana:latest
+        ports:
+        - containerPort: 3000
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: grafana-service
+spec:
+  type: NodePort
+  selector:
+    app: grafana
+  ports:
+    - port: 3000
+      targetPort: 3000
+      nodePort: 32000
+
+```
+
+### 2. Apply the Configuration
+
+Deployed the defined resources to the Kubernetes cluster using the declarative apply command.
+
+```bash
+kubectl apply -f grafana-setup.yaml
+
+```
+
+*Result: `deployment.apps/grafana-deployment-nautilus created` and `service/grafana-service created`.*
+
+### 3. Verify Deployment and Access
+
+Monitored the pod initialization to ensure the container started successfully, then verified the service routing.
+
+```bash
+kubectl get pods -l app=grafana -w
+kubectl get service grafana-service
+
+```
+
+*Result: The pod transitioned from `ContainerCreating` to `Running` within 17 seconds. The service successfully bound cluster port 3000 to external NodePort 32000 (`3000:32000/TCP`), allowing immediate access to the Grafana login page via the browser.*
+
+---
+
+## Architecture & Learnings
+
+* **Service Port Mapping:** Exposing web interfaces like Grafana on Kubernetes requires careful alignment of ports. `containerPort: 3000` tells the cluster what port the container listens on, `targetPort: 3000` tells the service where to send traffic, and `nodePort: 32000` dictates what port is opened on the physical host nodes for external browser access.
+* **Terminal Formatting:** When utilizing `cat << 'EOF'`, terminal echo artifacts or copy-paste mangling can occasionally append corrupted lines to the visual output, but as long as the finalized file syntax complies with strict YAML formatting, Kubernetes will parse and apply the configuration without error.
+
+```
+
+```
