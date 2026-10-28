@@ -1,0 +1,101 @@
+```markdown
+
+## Objective
+Set up an application stack for a new Java-based project on an existing Kubernetes cluster. The requirements involved isolating the resources within a dedicated namespace, deploying a Tomcat web server container, and exposing it to external traffic using a specific NodePort configuration.
+
+## Environment & Tools
+* **Platform:** Kubernetes Cluster
+* **CLI Tool:** `kubectl`
+* **Namespace:** `tomcat-namespace-nautilus`
+* **Application Image:** `kodekloud/centos-ssh-enabled:tomcat`
+* **Network Concept:** NodePort Service
+
+---
+
+## Step-by-Step Execution
+
+### 1. Establish the Namespace
+Created an isolated environment specifically for the Tomcat application to ensure clean resource grouping and prevent conflicts with existing cluster deployments.
+```bash
+kubectl create namespace tomcat-namespace-nautilus
+
+```
+
+### 2. Define the Declarative Manifest
+
+Drafted a unified YAML file (`tomcat-setup.yaml`) specifying both the Deployment and the Service.
+
+* **Deployment:** Configured to run 1 replica of the Tomcat container listening on port `8080`.
+* **Service:** Configured as a NodePort to expose the internal port `8080` to the requested external port `32227`.
+
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tomcat-deployment-nautilus
+  namespace: tomcat-namespace-nautilus
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: tomcat-app
+  template:
+    metadata:
+      labels:
+        app: tomcat-app
+    spec:
+      containers:
+      - name: tomcat-container-nautilus
+        image: kodekloud/centos-ssh-enabled:tomcat
+        ports:
+        - containerPort: 8080
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: tomcat-service-nautilus
+  namespace: tomcat-namespace-nautilus
+spec:
+  type: NodePort
+  selector:
+    app: tomcat-app
+  ports:
+    - port: 8080
+      targetPort: 8080
+      nodePort: 32227
+
+```
+
+### 3. Deploy Resources
+
+Applied the configuration directly to the cluster.
+
+```bash
+kubectl apply -f tomcat-setup.yaml
+
+```
+
+*Result: Deployment and service successfully created within the targeted namespace.*
+
+### 4. Real-Time Verification
+
+Leveraged the watch flag (`-w`) to stream real-time updates of the pod initialization process.
+
+```bash
+kubectl get pods -n tomcat-namespace-nautilus -w
+kubectl get service -n tomcat-namespace-nautilus
+
+```
+
+*Result: The deployment successfully scheduled the pod, reaching a `1/1 Running` state. The service verification confirmed that `32227` was successfully bound and actively routing traffic to container port `8080`.*
+
+---
+
+## Architecture & Learnings
+
+* **Real-Time Resource Monitoring:** Utilizing the `-w` (watch) flag is highly effective for observing lifecycle state transitions (e.g., Image Pulling -> Container Creating -> Running) without repeatedly polling the API server.
+* **Terminal Data Integrity:** Terminal echo artifacts during `cat << 'EOF'` entry can look messy on the screen, but verifying the file contents immediately after with a standard `cat` command ensures the structural integrity of the YAML before applying it to the cluster.
+
+```
+
+```
