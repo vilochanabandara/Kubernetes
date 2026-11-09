@@ -1,0 +1,92 @@
+```markdown
+
+## Objective
+Deploy a newly developed Node.js application to the Kubernetes cluster based on exact developer specifications. The deployment required spinning up 2 replicas using a custom Node.js image and exposing the application to external traffic via a strictly defined NodePort configuration.
+
+## Environment & Tools
+* **Platform:** Kubernetes Cluster
+* **CLI Tool:** `kubectl`
+* **Application Image:** `kodekloud/centos-ssh-enabled:node`
+* **Network Concept:** NodePort Service
+
+---
+
+## Step-by-Step Execution
+
+### 1. Define the Declarative Manifest
+Created a unified YAML manifest (`node-app-setup.yaml`) to declare the Deployment and the Service resources in a single file. 
+
+* **Deployment:** Configured to run exactly 2 replicas of the Node.js application, with the container listening on port `8080`.
+* **Service:** Configured as a NodePort to expose the internal application port `8080` to the specific external cluster port `30012`.
+
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: node-app-deployment
+  labels:
+    app: node-app
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: node-app
+  template:
+    metadata:
+      labels:
+        app: node-app
+    spec:
+      containers:
+      - name: node-app-container
+        image: kodekloud/centos-ssh-enabled:node
+        ports:
+        - containerPort: 8080
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: node-app-service
+spec:
+  type: NodePort
+  selector:
+    app: node-app
+  ports:
+    - port: 8080
+      targetPort: 8080
+      nodePort: 30012
+
+```
+
+### 2. Deploy Resources
+
+Applied the manifest to the Kubernetes cluster to initiate the creation of the ReplicaSet and the Service routing.
+
+```bash
+kubectl apply -f node-app-setup.yaml
+
+```
+
+*Result: `deployment.apps/node-app-deployment created` and `service/node-app-service created`.*
+
+### 3. Verify Deployment and Service Status
+
+Used the `-w` (watch) flag to monitor the real-time initialization of the replicas and verified the service port bindings.
+
+```bash
+kubectl get pods -l app=node-app -w
+kubectl get service node-app-service
+
+```
+
+*Result: Both pod replicas (`c786bfd69-js8nl` and `c786bfd69-l6fwk`) successfully initialized and reached the `Running` state within seconds. The service successfully bound cluster port 8080 to external NodePort 30012 (`8080:30012/TCP`), making the application fully accessible.*
+
+---
+
+## Architecture & Learnings
+
+* **Horizontal Scaling:** By setting `replicas: 2`, Kubernetes ensures that traffic hitting the NodePort service on port 30012 is automatically load-balanced across both running instances of the Node.js application, providing high availability right out of the gate.
+* **Unified Application Stacks:** Managing both the workload (Deployment) and the networking (Service) in a single YAML artifact ensures that when the application is spun up or torn down, no orphaned network policies or disconnected services are left behind.
+
+```
+
+```
