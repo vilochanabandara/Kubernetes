@@ -1,0 +1,74 @@
+```markdown
+
+## Objective
+Diagnose and repair a failing Redis deployment in a Kubernetes cluster following a botched configuration update by a team member. The pods were stuck in a failing state, requiring immediate investigation into the pod events and deployment configuration to restore service.
+
+## Environment & Tools
+* **Platform:** Kubernetes Cluster
+* **CLI Tool:** `kubectl`
+* **Application:** Redis
+* **Core Concepts:** Pod Troubleshooting, Events Diagnostics, Live Deployment Editing.
+
+---
+
+## Step-by-Step Execution
+
+### 1. Identify the Failing Pod
+Checked the current status of the pods in the default namespace to locate the broken application.
+```bash
+kubectl get pods
+
+```
+
+*Result: Found `redis-deployment-6bc546f779-hpc9k` stuck in `ContainerCreating` status.*
+
+### 2. Diagnose the Root Causes
+
+Described the failing pod and inspected the `Events` section to understand why the container refused to create. Also pulled the raw deployment YAML to cross-reference the configuration.
+
+```bash
+kubectl describe pod redis-deployment-6bc546f779-hpc9k
+kubectl get deployment redis-deployment -o yaml
+
+```
+
+**Findings:**
+
+1. **ConfigMap Error:** The pod events explicitly stated: `MountVolume.SetUp failed for volume "config" : configmap "redis-conig" not found`. This indicated a typographical error in the ConfigMap reference (`redis-conig` instead of `redis-config`).
+2. **Image Error:** Inspection of the raw YAML revealed the image was misspelled as `redis:alpin` instead of the correct tag `redis:alpine`.
+
+### 3. Repair the Deployment Live
+
+Leveraged the interactive `kubectl edit` command to modify the deployment resource directly in the API server without needing to hunt down the original source manifest.
+
+```bash
+kubectl edit deployment redis-deployment
+
+```
+
+**Modifications Made:**
+
+* Updated `spec.template.spec.containers.image` to `redis:alpine`.
+* Updated `spec.template.spec.volumes.configMap.name` to `redis-config`.
+
+### 4. Verify Recovery
+
+Saved the changes, triggering the deployment controller to automatically terminate the broken ReplicaSet and spin up a new pod with the corrected configuration.
+
+```bash
+kubectl get pod
+
+```
+
+*Result: The new pod (`redis-deployment-5476b4ddd6-8zq9c`) successfully initialized and reached the `1/1 Running` state, fully restoring the application.*
+
+---
+
+## Troubleshooting & Learnings
+
+* **Pod Events Are the Source of Truth:** When a pod fails to reach a `Running` state, `kubectl describe pod <name>` is always the first step. The `Events` log at the bottom provides human-readable context directly from the Kubelet detailing exactly why initialization halted (e.g., missing secrets, failed volume mounts, or image pull errors).
+* **Live Editing:** `kubectl edit` is an incredibly powerful tool for rapid incident response, allowing immediate correction of API objects. However, it is critical to ensure that these live fixes are eventually backported to the original YAML manifests stored in version control to prevent regressions on the next automated pipeline run.
+
+```
+
+```
