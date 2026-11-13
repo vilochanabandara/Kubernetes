@@ -1,0 +1,74 @@
+```markdown
+
+## Objective
+Diagnose and restore a broken WordPress/LAMP application stack (`lamp-wp`) deployed on a Kubernetes cluster. The application had gone down following recent modifications, exhibiting both external routing failures and database connectivity errors, while requiring all existing resource names, labels, and secrets to remain intact.
+
+## Environment & Tools
+* **Platform:** Kubernetes Cluster
+* **CLI Tool:** `kubectl`, `curl`
+* **Application Stack:** Multi-container Pod (`webdevops/php-apache:alpine-3-php7` + `mysql:5.6`)
+* **Core Concepts:** Multi-Container Pod Logs, Service NodePort Patching, Secret Validation, In-Container Debugging.
+
+---
+
+## Step-by-Step Execution
+
+### 1. Audit Cluster Resources
+Inspected the running pods, services, and secrets in the default namespace to establish a baseline of the stack's state.
+```bash
+kubectl get pods,svc,secrets
+
+```
+
+**Finding #1 (Service Port Mismatch):** While `pod/lamp-wp-5594699b75-hr9cw` showed `2/2 Running`, `service/lamp-service` was exposing `80:30009/TCP` instead of the required NodePort `30008`.
+
+### 2. Patch the Service NodePort
+
+Updated `lamp-service` in-place using a JSON patch to route external port `30008` to target port `80` without deleting or recreating the service.
+
+```bash
+kubectl patch svc lamp-service --type='json' -p='[{"op": "replace", "path": "/spec/ports/0/nodePort", "value": 30008}]'
+
+```
+
+*Result: `service/lamp-service` updated to `80:30008/TCP`.*
+
+### 3. Inspect Multi-Container Logs and Secrets
+
+Retrieved logs across both containers in the pod and verified the deployment's `SecretKeyRef` mappings against the cluster's secrets.
+
+```bash
+kubectl logs lamp-wp-5594699b75-hr9cw --all-containers=true
+kubectl get deployment lamp-wp -o yaml
+kubectl get secret mysql-db-url mysql-host mysql-root-pass mysql-user-pass -o jsonpath='{range .items[*]}{.metadata.name}{": "}{.data}{"\n"}{end}'
+
+```
+
+**Finding #2 (Application Variable Typos):** Although Kubernetes was properly injecting `MYSQL_PASSWORD` and `MYSQL_HOST` from the secrets (`127.0.0.1` for localhost sidecar communication), PHP-FPM stderr logs revealed:
+
+* `PHP Notice: Undefined index: MYSQL_PASSWORDS in /app/index.php on line 4`
+* `PHP Notice: Undefined index: HOST_MYQSL in /app/index.php on line 5`
+* `PHP Warning: mysqli_connect(): (HY000/2005): Unknown MySQL server host 'mysql' (-2)`
+
+### 4. Repair Application Code and Verify Connectivity
+
+Inspected `/app/index.php` inside `httpd-php-container` and corrected the misspelled environment variable keys (`MYSQL_PASSWORDS` -> `MYSQL_PASSWORD` and `HOST_MYQSL` -> `MYSQL_HOST`).
+
+```bash
+kubectl exec lamp-wp-5594699b75-hr9cw -c httpd-php-container -- sed -i 's/MYSQL_PASSWORDS/MYSQL_PASSWORD/g; s/HOST_MYQSL/MYSQL_HOST/g' /app/index.php
+curl -s http://localhost:30008
+
+```
+
+*Result: `curl` returned `Connected successfully`, confirming end-to-end HTTP routing and MySQL database connectivity.*
+
+---
+
+## Troubleshooting & Learnings
+
+* **Multi-Container Pod Communication:** Because `httpd-php-container` and `mysql-container` share the same Pod network namespace, `mysql-host` resolves to `127.0.0.1` (`localhost`). When PHP failed to read `HOST_MYQSL`, it defaulted to `'mysql'`, triggering a DNS lookup failure.
+* **Full-Stack Diagnostics:** A healthy pod status (`2/2 Running`) does not guarantee application availability. Effective Kubernetes troubleshooting requires checking all layers: Service port mappings (`kubectl get svc`), pod environment injection (`kubectl get deploy -o yaml`), and application-level runtime logs (`kubectl logs --all-containers=true`).
+
+```
+
+```
